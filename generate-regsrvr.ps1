@@ -56,12 +56,16 @@ function Parse-EntryName {
     )
 
     $parts = $EntryName -split ':'
-    if ($parts.Count -lt 5) {
+    if ($parts.Count -lt 8) {
         throw "Unsupported Entry Name format: $EntryName"
     }
 
-    $serverName = $parts[4].Trim()
-    $databaseName = if ($parts.Count -ge 6) { $parts[5].Trim() } else { "" }
+    # CredentialFileView exports SSMS targets like:
+    # LegacyGeneric:target=Microsoft:SSMS:19:<server>:<database>:<guid>:1
+    # Read the server/database from the tail so the parser is less brittle if
+    # earlier segments vary.
+    $serverName = $parts[$parts.Count - 4].Trim()
+    $databaseName = $parts[$parts.Count - 3].Trim()
 
     return [pscustomobject]@{
         ServerName   = $serverName
@@ -108,17 +112,12 @@ function Parse-CredentialDump {
 function New-ConnectionString {
     param(
         [string]$ServerName,
-        [string]$DatabaseName,
         [string]$UserName,
         [string]$Password
     )
 
     $segments = New-Object System.Collections.Generic.List[string]
     $segments.Add("data source=$ServerName")
-
-    if ($DatabaseName) {
-        $segments.Add("initial catalog=$DatabaseName")
-    }
 
     $segments.Add("user id=$UserName")
     $segments.Add("password=$(Protect-PasswordForSsms -Password $Password)")
@@ -175,7 +174,6 @@ foreach ($entry in $entries) {
     $serverUri = "$groupUri/RegisteredServer/$uriSegment"
     $connectionString = New-ConnectionString `
         -ServerName $entry.ServerName `
-        -DatabaseName $entry.DatabaseName `
         -UserName $entry.UserName `
         -Password $entry.Password
 
